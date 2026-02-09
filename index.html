@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soirée Dégustation</title>
+    <style>
+        :root { --vin: #a21232; --vert: #2ecc71; --fond: #f4f7f6; --orange: #ff9f43; }
+        body { font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; background: var(--fond); }
+        .container { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; border: none; border-radius: 8px; background: var(--vert); color: white; font-weight: bold; cursor: pointer; font-size: 16px; }
+        
+        .liste { padding-inline-start: 0px; list-style: none; }
+        li { background: #fff; border: 1px solid #eee; margin: 8px 0; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .section-title { margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 5px; font-size: 1.1em; }
+        .attente-title { color: var(--orange); border-bottom-color: var(--orange); }
+        #count { background: var(--orange); color: white; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
+        .btn-waiting { background: var(--orange) !important; }
+
+        .btn-delete { width: 32%; background: #ff7675; color: white; border: none; padding: 8px 2px; border-radius: 5px; cursor: pointer; font-size: 10px; flex-shrink: 0; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🍷 Dégustation Vinatis</h2>
+    <p style="text-align:center">Places restantes : <span id="count">24</span></p>
+    
+    <input type="text" id="prenom" placeholder="Prénom">
+    <input type="text" id="nom" placeholder="Nom">
+    
+    <button id="main-btn" type="button" onclick="ajouterParticipant()">S'INSCRIRE MAINTENANT</button>
+
+    <h3 class="section-title">✅ Inscrits confirmés :</h3>
+    <ul id="liste-inscrits" class="liste"></ul>
+
+    <div id="section-attente" style="display:none;">
+        <h3 class="section-title attente-title">⏳ Liste d'attente :</h3>
+        <ul id="liste-attente" class="liste"></ul>
+    </div>
+</div>
+
+<script>
+    const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbwYJ4LIa7DCkdbqBnr4Tw5GKB4bJEM9YjzLG0zuOS4gEEKv5cYXUwomYTpYrf52juzzAA/exec";
+    const QUOTA_MAX = 24;
+    let participants = [];
+
+    window.onload = charger;
+
+    async function charger() {
+        try {
+            const res = await fetch(URL_SCRIPT);
+            participants = await res.json();
+            render();
+        } catch (e) { console.error("Erreur chargement:", e); }
+    }
+
+    function render() {
+        const listeInscrits = document.getElementById('liste-inscrits');
+        const listeAttente = document.getElementById('liste-attente');
+        const sectionAttente = document.getElementById('section-attente');
+        const countSpan = document.getElementById('count');
+        const mainBtn = document.getElementById('main-btn');
+        
+        listeInscrits.innerHTML = '';
+        listeAttente.innerHTML = '';
+
+        participants.forEach((p, i) => {
+            const li = document.createElement('li');
+            // SECURITÉ : Si row est absent (ajout récent), on ne permet pas la suppression immédiate sans rafraîchir
+            const deleteBtn = p.row 
+                ? `<button class="btn-delete" onclick="supprimer(${p.row}, ${i})">SE DÉSISTER</button>`
+                : `<small style="color:gray; font-size:9px">En cours...</small>`;
+
+            li.innerHTML = `<span>${p.prenom} ${p.nom}</span> ${deleteBtn}`;
+            
+            if (i < QUOTA_MAX) {
+                listeInscrits.appendChild(li);
+            } else {
+                listeAttente.appendChild(li);
+            }
+        });
+
+        const placesRestantes = QUOTA_MAX - participants.length;
+        countSpan.textContent = Math.max(0, placesRestantes);
+
+        if (participants.length >= QUOTA_MAX) {
+            mainBtn.textContent = "S'INSCRIRE SUR LISTE D'ATTENTE";
+            mainBtn.classList.add('btn-waiting');
+        } else {
+            mainBtn.textContent = "S'INSCRIRE MAINTENANT";
+            mainBtn.classList.remove('btn-waiting');
+        }
+        sectionAttente.style.display = participants.length > QUOTA_MAX ? 'block' : 'none';
+    }
+
+    async function ajouterParticipant() {
+        const prenom = document.getElementById('prenom').value.trim();
+        const nom = document.getElementById('nom').value.trim();
+
+        if (!prenom || !nom) return alert("Remplis ton nom et prénom !");
+
+        // Ajout local pour fluidité
+        participants.push({ prenom, nom, row: null });
+        render();
+
+        document.getElementById('prenom').value = '';
+        document.getElementById('nom').value = '';
+
+        try {
+            await fetch(URL_SCRIPT, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ action: "add", nom, prenom })
+            });
+            // On recharge 3s après pour récupérer le numéro de ligne (row) officiel
+            setTimeout(charger, 3000);
+        } catch (e) { console.error(e); }
+    }
+
+    async function supprimer(rowId, index) {
+        if (!confirm("Voulez-vous vraiment vous désister ?")) return;
+
+        participants.splice(index, 1);
+        render();
+
+        try {
+            await fetch(URL_SCRIPT, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ action: "delete", row: rowId })
+            });
+            // Ici on ne recharge pas immédiatement pour éviter le bug de réapparition
+        } catch (e) { console.error(e); }
+    }
+</script>
+</body>
+</html>
