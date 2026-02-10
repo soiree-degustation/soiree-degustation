@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soirée Dégustation</title>
     <style>
+/* Style pour la ligne en cours de suppression */
+.is-deleting {
+    opacity: 0.4;
+    pointer-events: none; /* Empêche de cliquer deux fois */
+    background-color: #f1f1f1 !important;
+    transition: opacity 0.3s ease;
+}
+
+/* Optionnel : petit texte pour indiquer l'attente */
+.is-deleting::after {
+    content: " (Suppression...)";
+    font-size: 0.8em;
+    color: #888;
+}
         :root { --vin: #a21232; --vert: #2ecc71; --fond: #f4f7f6; --orange: #ff9f43; }
         body { font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; background: var(--fond); }
         .container { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
@@ -120,21 +134,39 @@
         } catch (e) { console.error(e); }
     }
 
-    async function supprimer(rowId, index) {
-        if (!confirm("Voulez-vous vraiment vous désister ?")) return;
+async function supprimer(rowId, index) {
+    if (!confirm("Voulez-vous vraiment vous désister ?")) return;
 
-        participants.splice(index, 1);
-        render();
-
-        try {
-            await fetch(URL_SCRIPT, {
-                method: 'POST',
-                mode: 'no-cors',
-                body: JSON.stringify({ action: "delete", row: rowId })
-            });
-            // Ici on ne recharge pas immédiatement pour éviter le bug de réapparition
-        } catch (e) { console.error(e); }
+    // 1. Trouver l'élément HTML correspondant à la ligne
+    // On utilise l'index pour cibler le bon <li> dans la liste
+    const toutesLesLignes = document.querySelectorAll('li');
+    const ligneElement = toutesLesLignes[index];
+    
+    if (ligneElement) {
+        ligneElement.classList.add('is-deleting'); // On grise la ligne
     }
+
+    try {
+        // 2. Appel au serveur
+        const response = await fetch(URL_SCRIPT, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({ action: "delete", row: rowId })
+        });
+
+        // 3. Une fois que l'appel est envoyé, on attend un tout petit peu 
+        // et on retire la personne de la liste locale
+        setTimeout(() => {
+            participants.splice(index, 1);
+            render();
+        }, 500);
+
+    } catch (e) {
+        console.error(e);
+        if (ligneElement) ligneElement.classList.remove('is-deleting');
+        alert("Erreur lors de la suppression. Réessayez.");
+    }
+}
 </script>
 </body>
 </html>
