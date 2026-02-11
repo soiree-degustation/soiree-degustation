@@ -5,20 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soirée Dégustation</title>
     <style>
-/* Style pour la ligne en cours de suppression */
-.is-deleting {
-    opacity: 0.4;
-    pointer-events: none; /* Empêche de cliquer deux fois */
-    background-color: #f1f1f1 !important;
-    transition: opacity 0.3s ease;
-}
-
-/* Optionnel : petit texte pour indiquer l'attente */
-.is-deleting::after {
-    content: " (Suppression...)";
-    font-size: 0.8em;
-    color: #888;
-}
         :root { --vin: #a21232; --vert: #2ecc71; --fond: #f4f7f6; --orange: #ff9f43; }
         body { font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; background: var(--fond); }
         .container { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
@@ -26,8 +12,16 @@
         button { width: 100%; padding: 15px; border: none; border-radius: 8px; background: var(--vert); color: white; font-weight: bold; cursor: pointer; font-size: 16px; }
         
         .liste { padding-inline-start: 0px; list-style: none; }
-        li { background: #fff; border: 1px solid #eee; margin: 8px 0; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        li { background: #fff; border: 1px solid #eee; margin: 8px 0; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease; }
         
+        /* Style pour la ligne en cours de suppression */
+        .is-deleting {
+            opacity: 0.3;
+            transform: translateX(10px);
+            pointer-events: none;
+            background-color: #ffeaea !important;
+        }
+
         .section-title { margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 5px; font-size: 1.1em; }
         .attente-title { color: var(--orange); border-bottom-color: var(--orange); }
         #count { background: var(--orange); color: white; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
@@ -60,6 +54,7 @@
     const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbwYJ4LIa7DCkdbqBnr4Tw5GKB4bJEM9YjzLG0zuOS4gEEKv5cYXUwomYTpYrf52juzzAA/exec";
     const QUOTA_MAX = 24;
     let participants = [];
+    let enCoursDeSuppression = false;
 
     window.onload = charger;
 
@@ -83,9 +78,10 @@
 
         participants.forEach((p, i) => {
             const li = document.createElement('li');
-            // SECURITÉ : Si row est absent (ajout récent), on ne permet pas la suppression immédiate sans rafraîchir
-            const deleteBtn = p.row 
-                ? `<button class="btn-delete" onclick="supprimer(${p.row}, ${i})">SE DÉSISTER</button>`
+            li.id = "p-" + p.id; // On donne un ID unique au LI pour le cibler facilement
+
+            const deleteBtn = p.id 
+                ? `<button class="btn-delete" onclick="supprimer('${p.id}', ${i})">SE DÉSISTER</button>`
                 : `<small style="color:gray; font-size:9px">En cours...</small>`;
 
             li.innerHTML = `<span>${p.prenom} ${p.nom}</span> ${deleteBtn}`;
@@ -113,11 +109,9 @@
     async function ajouterParticipant() {
         const prenom = document.getElementById('prenom').value.trim();
         const nom = document.getElementById('nom').value.trim();
-
         if (!prenom || !nom) return alert("Remplis ton nom et prénom !");
 
-        // Ajout local pour fluidité
-        participants.push({ prenom, nom, row: null });
+        participants.push({ prenom, nom, id: null });
         render();
 
         document.getElementById('prenom').value = '';
@@ -129,44 +123,45 @@
                 mode: 'no-cors',
                 body: JSON.stringify({ action: "add", nom, prenom })
             });
-            // On recharge 3s après pour récupérer le numéro de ligne (row) officiel
-            setTimeout(charger, 3000);
+            setTimeout(charger, 2000);
         } catch (e) { console.error(e); }
     }
 
-async function supprimer(rowId, index) {
-    if (!confirm("Voulez-vous vraiment vous désister ?")) return;
+    async function supprimer(uniqueId, index) {
+        if (enCoursDeSuppression) return;
+        if (!confirm("Voulez-vous vraiment vous désister ?")) return;
 
-    // 1. Trouver l'élément HTML correspondant à la ligne
-    // On utilise l'index pour cibler le bon <li> dans la liste
-    const toutesLesLignes = document.querySelectorAll('li');
-    const ligneElement = toutesLesLignes[index];
-    
-    if (ligneElement) {
-        ligneElement.classList.add('is-deleting'); // On grise la ligne
+        enCoursDeSuppression = true;
+
+        // 1. On cible l'élément par son ID unique de participant
+        const ligneElement = document.getElementById("p-" + uniqueId);
+        
+        if (ligneElement) {
+            ligneElement.classList.add('is-deleting'); // On applique le style grisé
+        }
+
+        try {
+            // 2. Appel au serveur avec l'ID unique
+            await fetch(URL_SCRIPT, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: JSON.stringify({ action: "delete", id: uniqueId })
+            });
+
+            // 3. On laisse le temps à l'utilisateur de voir l'effet (800ms)
+            setTimeout(() => {
+                participants.splice(index, 1);
+                render();
+                enCoursDeSuppression = false;
+            }, 800);
+
+        } catch (e) {
+            console.error(e);
+            if (ligneElement) ligneElement.classList.remove('is-deleting');
+            enCoursDeSuppression = false;
+            alert("Erreur lors de la suppression.");
+        }
     }
-
-    try {
-        // 2. Appel au serveur
-        const response = await fetch(URL_SCRIPT, {
-            method: 'POST',
-            mode: 'no-cors',
-            body: JSON.stringify({ action: "delete", row: rowId })
-        });
-
-        // 3. Une fois que l'appel est envoyé, on attend un tout petit peu 
-        // et on retire la personne de la liste locale
-        setTimeout(() => {
-            participants.splice(index, 1);
-            render();
-        }, 500);
-
-    } catch (e) {
-        console.error(e);
-        if (ligneElement) ligneElement.classList.remove('is-deleting');
-        alert("Erreur lors de la suppression. Réessayez.");
-    }
-}
 </script>
 </body>
 </html>
