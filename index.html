@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soirée Dégustation</title>
     <style>
-        :root { --vin: #a21232; --vert: #2ecc71; --fond: #f4f7f6; --orange: #ff9f43; }
+        :root { --vin: #a21232; --vert: #2ecc71; --fond: #f4f7f6; --orange: #ff9f43; --gris: #95a5a6; }
         body { font-family: 'Segoe UI', sans-serif; max-width: 500px; margin: 20px auto; padding: 20px; background: var(--fond); }
         .container { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
@@ -14,7 +14,6 @@
         .liste { padding-inline-start: 0px; list-style: none; }
         li { background: #fff; border: 1px solid #eee; margin: 8px 0; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease; }
         
-        /* Style pour la ligne en cours de suppression */
         .is-deleting {
             opacity: 0.3;
             transform: translateX(10px);
@@ -24,16 +23,21 @@
 
         .section-title { margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 5px; font-size: 1.1em; }
         .attente-title { color: var(--orange); border-bottom-color: var(--orange); }
+        .desinscrit-title { color: var(--gris); border-bottom-color: var(--gris); }
+        
         #count { background: var(--orange); color: white; padding: 2px 10px; border-radius: 20px; font-weight: bold; }
         .btn-waiting { background: var(--orange) !important; }
 
         .btn-delete { width: 32%; background: #ff7675; color: white; border: none; padding: 8px 2px; border-radius: 5px; cursor: pointer; font-size: 10px; flex-shrink: 0; font-weight: bold; }
+        
+        /* Style pour les noms barrés dans la liste des désinscrits */
+        .li-desinscrit { background: #f9f9f9; color: #999; text-decoration: line-through; border-style: dashed; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>🍷 Dégustation</h2>
+    <h2>🍷 Dégustation Vinatis</h2>
     <p style="text-align:center">Places restantes : <span id="count">24</span></p>
     
     <input type="text" id="prenom" placeholder="Prénom">
@@ -48,12 +52,18 @@
         <h3 class="section-title attente-title">⏳ Liste d'attente :</h3>
         <ul id="liste-attente" class="liste"></ul>
     </div>
+
+    <div id="section-desinscrits" style="display:none;">
+        <h3 class="section-title desinscrit-title">❌ Désistements :</h3>
+        <ul id="liste-desinscrits" class="liste"></ul>
+    </div>
 </div>
 
 <script>
     const URL_SCRIPT = "https://script.google.com/macros/s/AKfycbwYJ4LIa7DCkdbqBnr4Tw5GKB4bJEM9YjzLG0zuOS4gEEKv5cYXUwomYTpYrf52juzzAA/exec";
     const QUOTA_MAX = 24;
     let participants = [];
+    let desinscrits = []; // On stocke les gens qui partent ici
     let enCoursDeSuppression = false;
 
     window.onload = charger;
@@ -69,17 +79,20 @@
     function render() {
         const listeInscrits = document.getElementById('liste-inscrits');
         const listeAttente = document.getElementById('liste-attente');
+        const listeDesinscrits = document.getElementById('liste-desinscrits');
         const sectionAttente = document.getElementById('section-attente');
+        const sectionDesinscrits = document.getElementById('section-desinscrits');
         const countSpan = document.getElementById('count');
         const mainBtn = document.getElementById('main-btn');
         
         listeInscrits.innerHTML = '';
         listeAttente.innerHTML = '';
+        listeDesinscrits.innerHTML = '';
 
+        // 1. Affichage des participants actifs (Inscrits + Attente)
         participants.forEach((p, i) => {
             const li = document.createElement('li');
-            li.id = "p-" + p.id; // On donne un ID unique au LI pour le cibler facilement
-
+            li.id = "p-" + p.id;
             const deleteBtn = p.id 
                 ? `<button class="btn-delete" onclick="supprimer('${p.id}', ${i})">SE DÉSISTER</button>`
                 : `<small style="color:gray; font-size:9px">En cours...</small>`;
@@ -93,6 +106,15 @@
             }
         });
 
+        // 2. Affichage de la liste des désinscrits
+        desinscrits.forEach(p => {
+            const li = document.createElement('li');
+            li.className = "li-desinscrit";
+            li.innerHTML = `<span>${p.prenom} ${p.nom}</span> <small style="font-size:9px">Retiré</small>`;
+            listeDesinscrits.appendChild(li);
+        });
+
+        // Mise à jour de l'interface
         const placesRestantes = QUOTA_MAX - participants.length;
         countSpan.textContent = Math.max(0, placesRestantes);
 
@@ -103,7 +125,9 @@
             mainBtn.textContent = "S'INSCRIRE MAINTENANT";
             mainBtn.classList.remove('btn-waiting');
         }
+
         sectionAttente.style.display = participants.length > QUOTA_MAX ? 'block' : 'none';
+        sectionDesinscrits.style.display = desinscrits.length > 0 ? 'block' : 'none';
     }
 
     async function ajouterParticipant() {
@@ -132,24 +156,24 @@
         if (!confirm("Voulez-vous vraiment vous désister ?")) return;
 
         enCoursDeSuppression = true;
-
-        // 1. On cible l'élément par son ID unique de participant
         const ligneElement = document.getElementById("p-" + uniqueId);
-        
-        if (ligneElement) {
-            ligneElement.classList.add('is-deleting'); // On applique le style grisé
-        }
+        if (ligneElement) ligneElement.classList.add('is-deleting');
 
         try {
-            // 2. Appel au serveur avec l'ID unique
             await fetch(URL_SCRIPT, {
                 method: 'POST',
                 mode: 'no-cors',
                 body: JSON.stringify({ action: "delete", id: uniqueId })
             });
 
-            // 3. On laisse le temps à l'utilisateur de voir l'effet (800ms)
             setTimeout(() => {
+                // LOGIQUE DE BASCULE :
+                // On récupère le participant avant de le supprimer du tableau principal
+                const personneQuiPart = participants[index];
+                if (personneQuiPart) {
+                    desinscrits.push(personneQuiPart); // On l'ajoute à la liste noire/grise
+                }
+                
                 participants.splice(index, 1);
                 render();
                 enCoursDeSuppression = false;
